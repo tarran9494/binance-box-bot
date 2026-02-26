@@ -205,6 +205,8 @@ async def process_feed(rss_url: str) -> int:
 
 async def main():
     logger.info("🔥 VIP Binance Box & Riddle Bot ЗАПУЩЕН")
+    logger.info(f"CHAT_ID = {CHAT_ID} (тип: {type(CHAT_ID).__name__})")
+    logger.info(f"TELEGRAM_TOKEN = {str(TELEGRAM_TOKEN)[:5]}... (скрыт)")
 
     while True:
         total_sent = 0
