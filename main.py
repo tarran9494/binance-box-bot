@@ -69,6 +69,13 @@ else:
     LAST_GUIDS = {}
 
 
+@bot.message_handler(func=lambda message: True)
+def log_all_messages(message):
+    logger.info(
+        f"📨 Получено сообщение от chat_id: {message.chat.id} (текст: {message.text})"
+    )
+
+
 def save_last_guids():
     with open(LAST_GUIDS_FILE, "w", encoding="utf-8") as f:
         json.dump(LAST_GUIDS, f, ensure_ascii=False, indent=2)
