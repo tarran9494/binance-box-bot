@@ -1,0 +1,5 @@
+https://opbnb-mainnet.nodereal.io/v1/c9ba2e71d77c43a7bb9677...…....,https://opbnb-mainnet.nodereal.io/v1/c08dcf4fe01146b1a632ca...…....,https://opbnb-mainnet-rpc.bnbchain.org,https://opbnb-rpc.publicnode.com
+
+
+
+WEBAPP_URL=https://vibe-guard-ai.vercel.app/?wc_project_id=add9137cea1e48432cd4ba404f4a7443

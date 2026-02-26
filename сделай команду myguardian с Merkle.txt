@@ -1,0 +1,5 @@
+сделай команду /myguardian с Merkle memory
+
+сделай websocket мониторинг блоков
+
+улучши nfa.py до полного BAP-578 уровня
