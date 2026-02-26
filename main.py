@@ -12,8 +12,8 @@ import telebot
 
 # ====================== НАСТРОЙКИ ======================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_IDS = [int(x.strip()) for x in os.getenv("CHAT_ID", "").split(",") if x.strip()]  # поддержка нескольких ID через запятую
-MAX_DAYS_OLD = float(os.getenv("MAX_DAYS_OLD", "0.25"))  # по умолчанию 6 часов (0.25 дня)
+CHAT_IDS = [int(x.strip()) for x in os.getenv("CHAT_ID", "").split(",") if x.strip()]
+MAX_DAYS_OLD = float(os.getenv("MAX_DAYS_OLD", "0.25"))  # по умолчанию 6 часов
 
 RSS_FEEDS = [
     "https://rss.app/feeds/2loSnhs0CZTT1d3I.xml",
@@ -82,8 +82,14 @@ logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+# Путь для сохранения GUID (Volume должен быть примонтирован в /app/data)
+DATA_DIR = "/app/data"
+if os.path.exists(DATA_DIR):
+    LAST_GUIDS_FILE = os.path.join(DATA_DIR, "last_guids.json")
+else:
+    LAST_GUIDS_FILE = "last_guids.json"  # fallback (не рекомендуется без Volume)
+
 # Загружаем обработанные GUID (глобально, чтобы избежать дублей между фидами)
-LAST_GUIDS_FILE = "/data/last_guids.json" if os.path.exists("/data") else "last_guids.json"
 if os.path.exists(LAST_GUIDS_FILE):
     with open(LAST_GUIDS_FILE, "r", encoding="utf-8") as f:
         PROCESSED_GUIDS = set(json.load(f))
@@ -97,12 +103,10 @@ def save_processed_guids():
 
 
 def extract_codes(text: str):
-    """Ищет коды: 4-20 заглавных букв/цифр, а также короткие цифровые коды (минимум 4 цифры)."""
-    # Основной паттерн: слова из 4-20 символов A-Z0-9
+    """Ищет коды: 4-20 заглавных букв/цифр, а также короткие цифровые коды."""
     codes = re.findall(r"\b[A-Z0-9]{4,20}\b", text.upper())
-    # Дополнительно: последовательности из 4+ цифр (иногда коды только цифровые)
     codes += re.findall(r"\b\d{4,}\b", text)
-    return list(set(codes))  # убираем дубли
+    return list(set(codes))
 
 
 def extract_username(feed):
@@ -118,7 +122,6 @@ async def send_telegram_message(
     """Отправка сообщения во все указанные чаты."""
     for chat_id in CHAT_IDS:
         try:
-            # Обрезаем до лимита Telegram
             if len(text) > 4096:
                 text = text[:4093] + "..."
             await asyncio.to_thread(
@@ -133,22 +136,16 @@ async def send_telegram_message(
 
 
 async def send_telegram_media(media_type, url, reply_to_message_id):
-    """Отправка фото или видео во все чаты (ответом на сообщение)."""
+    """Отправка фото или видео во все чаты."""
     for chat_id in CHAT_IDS:
         try:
             if media_type == "photo":
                 await asyncio.to_thread(
-                    bot.send_photo,
-                    chat_id,
-                    url,
-                    reply_to_message_id=reply_to_message_id,
+                    bot.send_photo, chat_id, url, reply_to_message_id=reply_to_message_id
                 )
             elif media_type == "video":
                 await asyncio.to_thread(
-                    bot.send_video,
-                    chat_id,
-                    url,
-                    reply_to_message_id=reply_to_message_id,
+                    bot.send_video, chat_id, url, reply_to_message_id=reply_to_message_id
                 )
         except Exception as e:
             logger.warning(f"⚠️ Медиа {url} не отправлено в чат {chat_id}: {e}")
@@ -160,7 +157,7 @@ async def process_feed(rss_url):
         feed = feedparser.parse(rss_url)
         username = extract_username(feed)
         cutoff_date = datetime.now() - timedelta(days=MAX_DAYS_OLD)
-        sent_guids: list[str] = []
+        sent_guids = []
 
         for entry in feed.entries:
             guid = entry.get("id") or entry.link
@@ -182,7 +179,7 @@ async def process_feed(rss_url):
             full_text = f"{title}\n\n{description}".strip()
             text_lower = full_text.lower()
 
-            # Проверка ключевых слов (регистронезависимо, с учётом китайских)
+            # Проверка ключевых слов
             if not any(kw in text_lower for kw in KEYWORDS):
                 continue
 
@@ -194,7 +191,6 @@ async def process_feed(rss_url):
                     + "\n".join([f"<code>{c}</code>" for c in codes])
                 )
 
-            # Экранируем HTML, но оставляем наши <code> и <b>
             safe_text = html.escape(full_text)
             message = f"""
 🔥 <b>НОВАЯ РАЗДАЧА / БОКС / ЗАГАДКА</b> от @{username}
@@ -209,8 +205,8 @@ async def process_feed(rss_url):
             # Отправляем текст
             sent_msg = await send_telegram_message(message)
 
-            # Отправляем медиа (enclosures и media_content)
-            media_urls: list[tuple[str, str]] = []
+            # Отправляем медиа
+            media_urls = []
             for link in entry.get("links", []):
                 if link.get("rel") == "enclosure" and link.get("type", "").startswith(
                     ("image/", "video/")
@@ -224,9 +220,7 @@ async def process_feed(rss_url):
                             media_urls.append((mtype, media["url"]))
 
             for mtype, url in media_urls[:4]:
-                await send_telegram_media(
-                    mtype, url, getattr(sent_msg, "message_id", None)
-                )
+                await send_telegram_media(mtype, url, sent_msg.message_id if sent_msg else None)
 
             logger.info(f"✅ Отправлено от @{username} | кодов: {len(codes)}")
             PROCESSED_GUIDS.add(guid)
@@ -243,6 +237,7 @@ async def main():
     logger.info("🔥 VIP Binance Box & Riddle Bot (MAX версия) ЗАПУЩЕН")
     logger.info(f"📢 Получатели: {CHAT_IDS}")
     logger.info(f"⏱️ Макс. возраст поста: {MAX_DAYS_OLD} дней")
+    logger.info(f"💾 Файл GUID: {LAST_GUIDS_FILE}")
 
     while True:
         start_time = datetime.now()
@@ -256,8 +251,7 @@ async def main():
         else:
             logger.info("⏳ Новых постов нет")
 
-        # Сохраняем GUID даже если ничего не отправили (на случай, если были ошибки, но мы уже добавили в PROCESSED_GUIDS)
-        save_processed_guids()
+        save_processed_guids()  # сохраняем даже если ничего не отправили (на случай, если GUID добавились)
 
         elapsed = (datetime.now() - start_time).total_seconds()
         delay = random.uniform(300, 720)  # 5-12 минут
