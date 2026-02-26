@@ -55,7 +55,10 @@ MAX_DAYS_OLD = 7  # не отправлять посты старше этого
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[logging.FileHandler("bot.log", encoding="utf-8"), logging.StreamHandler()],
+    handlers=[
+        logging.FileHandler("bot.log", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -67,13 +70,6 @@ if os.path.exists(LAST_GUIDS_FILE):
         LAST_GUIDS = json.load(f)
 else:
     LAST_GUIDS = {}
-
-
-@bot.message_handler(func=lambda message: True)
-def log_all_messages(message):
-    logger.info(
-        f"📨 Получено сообщение от chat_id: {message.chat.id} (текст: {message.text})"
-    )
 
 
 def save_last_guids():
@@ -122,7 +118,7 @@ async def send_telegram_media(media_type: str, url: str, reply_to_message_id: in
         logger.warning(f"Не удалось отправить медиа {url}: {e}")
 
 
-async def process_feed(rss_url: str) -> int:
+async def process_feed(rss_url):
     """Обрабатывает один RSS-канал, возвращает количество отправленных постов."""
     try:
         feed = feedparser.parse(rss_url)
@@ -133,7 +129,7 @@ async def process_feed(rss_url: str) -> int:
         # Порог даты – не старше MAX_DAYS_OLD
         cutoff_date = datetime.now() - timedelta(days=MAX_DAYS_OLD)
 
-        # Идём с конца, чтобы новые были в начале (feedparser выдаёт от старых к новым)
+        # Идём с конца, чтобы новые были в начале
         for entry in reversed(feed.entries):
             guid = entry.get("id") or entry.link
 
@@ -141,7 +137,7 @@ async def process_feed(rss_url: str) -> int:
             if guid == last_guid:
                 break
 
-            # Проверка даты (если есть)
+            # Проверка даты
             published = entry.get("published_parsed") or entry.get("updated_parsed")
             if published:
                 pub_date = datetime(*published[:6])
@@ -162,7 +158,7 @@ async def process_feed(rss_url: str) -> int:
                         + "\n".join([f"<code>{c}</code>" for c in codes])
                     )
 
-                # Экранируем HTML, но оставляем наши <code> и <b> (они добавляются после экранирования)
+                # Экранируем HTML
                 safe_text = html.escape(full_text)
                 message = f"""
 🔥 <b>НОВАЯ РАЗДАЧА / БОКС / ЗАГАДКА</b> от @{username}
@@ -177,17 +173,13 @@ async def process_feed(rss_url: str) -> int:
                 # Отправляем текст
                 sent_msg = await send_telegram_message(message)
 
-                # Отправляем медиа (enclosures и media_content)
-                media_urls: list[tuple[str, str]] = []
-                # 1) Стандартные enclosures
+                # Отправляем медиа
+                media_urls = []
                 for link in entry.get("links", []):
                     if link.get("rel") == "enclosure" and link.get(
                         "type", ""
                     ).startswith(("image/", "video/")):
-                        media_urls.append(
-                            (link["type"].split("/")[0], link["href"])
-                        )  # ('image', url)
-                # 2) Нестандартное поле media_content
+                        media_urls.append((link["type"].split("/")[0], link["href"]))
                 if hasattr(entry, "media_content") and entry.media_content:
                     for media in entry.media_content:
                         if media.get("url"):
@@ -195,7 +187,7 @@ async def process_feed(rss_url: str) -> int:
                             if mtype in ("image", "video"):
                                 media_urls.append((mtype, media["url"]))
 
-                for mtype, url in media_urls[:4]:  # не более 4 вложений
+                for mtype, url in media_urls[:4]:
                     await send_telegram_media(mtype, url, sent_msg.message_id)
 
                 logger.info(f"✅ Отправлено от @{username} | кодов: {len(codes)}")
@@ -212,8 +204,6 @@ async def process_feed(rss_url: str) -> int:
 
 async def main():
     logger.info("🔥 VIP Binance Box & Riddle Bot ЗАПУЩЕН")
-    logger.info(f"CHAT_ID = {CHAT_ID} (тип: {type(CHAT_ID).__name__})")
-    logger.info(f"TELEGRAM_TOKEN = {str(TELEGRAM_TOKEN)[:5]}... (скрыт)")
 
     while True:
         total_sent = 0
